@@ -924,6 +924,7 @@ do_getFFmpegConfig() {
         do_addOption --enable-gnutls
     elif ! disabled schannel; then
         # fallback to schannel if no other tls libs are enabled
+        do_removeOption "${_all_tls}"
         do_addOption --enable-schannel
     fi
 
@@ -1200,6 +1201,7 @@ do_addOption() {
     for opt; do
         ! opt_exists "$array" "$opt" && declare -ag "$array+=(\"$opt\")"
     done
+    return 0
 }
 
 do_removeOption() {
@@ -1391,11 +1393,9 @@ do_meson() {
     extra_script pre meson
     [[ -f "$(get_first_subdir -f)/do_not_reconfigure" ]] &&
         return
-    local default_libs
-    [[ $ffmpeg =~ "both" ]] && default_libs="both" || default_libs="static"
     # shellcheck disable=SC2086
     PKG_CONFIG="pkgconf --static --keep-system-libs --keep-system-cflags" CC=${CC/ccache /}.bat CXX=${CXX/ccache /}.bat \
-        log "meson" meson setup "$root" --default-library="$default_libs" --default-both-libraries=static --buildtype=release \
+        log "meson" meson setup "$root" --default-library=static --default-both-libraries=static --buildtype=release \
         --prefix="$LOCALDESTDIR" --backend=ninja $bindir "$@" "${meson_extras[@]}"
     extra_script post meson
     unset meson_extras
@@ -1666,10 +1666,11 @@ do_makeinstall() {
 do_hide_pacman_sharedlibs() {
     local packages="$1"
     local revert="$2"
-    local files
-    files="$(pacman -Qql "$packages" 2> /dev/null | grep .dll.a)"
+    shift 2
+    set -- $packages
+    set -- $(pacman -Qql "$@" 2> /dev/null | grep .dll.a)
 
-    for file in $files; do
+    for file in "$@"; do
         if [[ -f "${file%*.dll.a}.a" ]]; then
             if [[ -z $revert ]]; then
                 mv -f "${file}" "${file}.dyn"
@@ -1685,7 +1686,7 @@ do_hide_pacman_sharedlibs() {
 do_hide_all_sharedlibs() {
     local dryrun="${dry:-n}"
     local files
-    files="$(find /{mingw{32,64},clang64}/lib /{mingw{32/i686,64/x86_64},clang64/x86_64}-w64-mingw32/lib -name "*.dll.a" 2> /dev/null)"
+    files="$(find /{mingw{32,64},clang64,ucrt64}/lib /{mingw{32/i686,64/x86_64},clang64,ucrt64/x86_64}-w64-mingw32/lib -name "*.dll.a" 2> /dev/null)"
     local tomove=()
     for file in $files; do
         [[ -f ${file%*.dll.a}.a ]] && tomove+=("$file")
